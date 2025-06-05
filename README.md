@@ -1,110 +1,32 @@
-# Async Task Processing System with Flask, Celery, RabbitMQ & Pulumi-Driven AWS Deployment in Multi-EC2 Instances
+# Async Task Processing System with AWS Deployment
 
-This project demonstrates a production-ready asynchronous task processing system (i.e Deployed in EC2 using Pulumi explained in infra-branch) using:
+This project demonstrates a production-ready asynchronous task processing system (i.e Deployed in EC2 using Pulumi explained in infra-branch) using: 
 
-* ✅ Flask (Web + API)
-* ✅ Celery (Task Queue Executor)
-* ✅ RabbitMQ (Message Broker)
-* ✅ Redis (Result Backend)
-* ✅ Flower (Monitoring UI)
-* ✅ Docker (Multi-service orchestration)
-
+ **Flask** as (Web + API), **Celery** as (Task Queue Executor) , **RabbitMQ** as (Message Broker) , **Redis** as (Result Backend) , **Flower** as (Monitoring UI) , **Docker** as (Multi-service orchestration)
 
 >  **Objective**: Design a system that allows users to submit tasks asynchronously from a Flask API, execute them reliably in the background using Celery, queue tasks in RabbitMQ, and store task states and results in a backend db (redis).
 
 ---
 
 ##  System Architecture :
-<img src="assets/implement.svg" alt="Implementation Diagram" width="1000">
+<img src="assets/Try-Page.svg" alt="Implementation Diagram" width="1000">
 
 ***1. User Request via API :***
+ user interacts with the frontend UI to trigger a task—such as sending an email, reversing a text, or analyzing sentiment. This action sends an HTTP request to the Flask backend through a specific API endpoint.
 
-→ Sends request from UI (email, text reverse, sentiment).
-
-***2. Flask App :***
-
-→ Receives request and pushes task to Celery using delay()
-
-→ Immediately responds to user (non-blocking).
-
-***3. Celery Producer Role (📩 Task Sent to Broker):***
-
-→  When .delay() is called in Flask,  celery sends the task to RabbitMQ (the message broker).
-
-→ So, Flask acts as the Producer in this diagram.
-
-***4. RabbitMQ Queue (Message Broker):***
-
-→ Holds tasks in queue(s).
-
-→ Forwards them to Celery Worker.
-
-***5. Celery Workers:***
-
-→ Continuously listens to RabbitMQ.
-
-→ Pulls and executes tasks (email/text/sentiment).
-
-→ Can run multiple processes (parallel).
+***2.  Flask App: Receiving & Dispatching***
+ Receives request and pushes task to Celery using delay().Flask responds to the user immediately with a confirmation message and a task_id, ensuring the experience remains fast and non-blocking.
 
 
+***3. Celery as the Producer***
+When .delay() is called, Celery acts as a task producer—serializing the task and sending it to the RabbitMQ message broker.
 
-***6. Redis (Result Backend):***
+***4. RabbitMQ: Message Broker Layer***
+RabbitMQ receives the serialized task and places it in a queue (commonly named celery_see).plays the role of a message router, managing queues and delivering tasks to any available consumer (Celery workers). It ensures decoupling between producers (Flask) and consumers (workers), allowing each part to scale independently.In these case:
 
-→ Stores task result/status (e.g., SUCCESS, FAILURE).
-
-→ Flask can query result using ***AsyncResult.***
-
-***7. UI Feedback:***
-
-→ Task ID flashed in UI.
-
-→ Success/failure notification shown based on result from Redis.
-
----
-## Project Features :
-* 📨 Async Email Sender with retry logic
-
-* 🔁 Reverse Text Processor * 💬 Fake Sentiment Analyzer
-
-* 🔁 Redis-based task result storage
-
-* 📊 Live task monitoring via Flower
-
-* 🧪 Task inspection via Redis
-
-* 🖥️ UI with feedback using Flask + Bootstrap
-
-* 🐳 Docker-based deployment
-
-
-### 🔧 Components :
-
-| Component    | Role                                 |
-| ------------ | ------------------------------------ |
-| **Flask**    | UI, task submission, status fetch    |
-| **Celery**   | Task execution engine                |
-| **RabbitMQ** | Message broker to queue tasks        |
-| **Redis**    | Stores task status & results         |
-| **Flower**   | Real-time task monitoring dashboard  |
-| **Docker**   | Container orchestration for services |
-
-
-
-
-###  Queues and Exchange in RabbitMQ
-
-<img src="assets/Broker.svg" alt="Broker Diagram" width="700">
-
-* Celery uses a direct exchange
-
-* Tasks routed by name → bound to celery_see queue
-
-* Each worker listens on that queue
-
->> In RabbitMQ:
-
-* Producer = Flask (via Celery)
+<div align="center">
+  <img src="assets/queue.svg" alt="Broker Diagram" width="700">
+</div>
 
 * Consumer = Celery Worker
 
@@ -112,9 +34,29 @@ This project demonstrates a production-ready asynchronous task processing system
 
 * Queue = celery_see (task queue)
 
----
 
-### Here, docker-compose.yml is  optimized with profiles so each instance only spins up its assigned service:(Use profiles to isolate services)
+***5. Celery Workers: Task Execution Engine***
+
+Celery workers continuously listen for tasks on the RabbitMQ queue. When a task becomes available, a worker pulls it, executes the defined function (like sending an email or reversing a string), and processes it in the background. With --concurrency enabled, workers can process multiple tasks in parallel, significantly improving throughput and responsiveness.
+
+
+
+***6. Redis: Result Tracking Backend***
+
+After a worker finishes processing a task, it stores the result and status (SUCCESS, FAILURE, or RETRY) in Redis. Redis serves as a fast, in-memory database that holds the task metadata under unique keys tied to the task_id. Flask can later query Redis using AsyncResult(task_id) to retrieve this data and update the user.
+
+***7. UI Feedback:***
+
+Finally, the frontend periodically polls the backend using the task_id to check the task’s status. Once Redis indicates that the task is complete, Flask fetches the result and returns it to the UI. The user sees a confirmation message or the processed output (e.g., reversed string or sentiment result). This feedback loop ensures the user is kept informed without blocking the main thread.
+
+
+## Client Interaction Flow
+
+<img src="assets/Flow.svg" alt="Implementation Diagram" width="1000">
+
+
+
+###  docker-compose.yml is  optimized with profiles so each instance only spins up its assigned service:(Use profiles to isolate services)
 
 ```bash
 version: "3.8"
@@ -196,8 +138,6 @@ This is automatically patched in each instance during boot with correct IPs of R
 
 
 
----
-
 
 
 ## 📁 Project Structure
@@ -230,11 +170,11 @@ async-tasks/
 
 ##  Concepts Implemented
 
-* ✅ Direct exchange with `celery_see` queue
-* ✅ Multi-worker concurrency with `--concurrency=4`
-* ✅ Flask session flash for notifications
-* ✅ Redis result tracking via `AsyncResult`
-* ✅ Queue retry using `self.retry()`
+* Direct exchange with `celery_see` queue
+* Multi-worker concurrency with `--concurrency=4`
+* Flask session flash for notifications
+* Redis result tracking via `AsyncResult`
+* Queue retry using `self.retry()`
 
 
 
